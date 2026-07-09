@@ -1,24 +1,20 @@
 # Stock Agent Center
 
-AI 股票研究调度中心。当前版本改成 **单项目部署模式**：只需要部署 `stock-agent-center`，Docker Compose 会同时启动内置的 `uzi-server`，并由 `stock-agent-center` 自己完成轻量股票池扫描。
+AI 股票研究调度中心。当前版本是 **单仓库部署、三服务内置版**：只需要部署 `stock-agent-center`，Docker Compose 会自动把 `daily_stock_analysis` 和 `UZI-Skill` 一起作为内部服务启动。
 
 ```text
 stock-agent-center
         |
-        | 内置股票池扫描 / 评分 / 候选筛选
-        v
-候选股票池
+        | 中控调度 / 规则判断 / 去重 / 统一入口
         |
-        | 规则判断 / 去重 / 调度
-        v
-内置 UZI-Skill Web
+        +---- embedded daily_stock_analysis
+        |          股票池扫描 / 日报 / 发现机会
         |
-        | 单票深度研究 / HTML 报告
-        v
-钉钉推送
+        +---- embedded UZI-Skill
+                   单票深度研究 / HTML 报告
 ```
 
-## 当前版本：v0.2 单项目部署版
+## 当前版本：v0.3 单仓库三服务版
 
 现在不需要分别部署：
 
@@ -37,22 +33,25 @@ stock-agent-center
 Docker 会自动启动：
 
 ```text
-stock-agent-center       中控 Web / 股票池扫描 / 规则调度
-stock-agent-uzi-server   内置 UZI-Skill Web / HTML 深度报告
+stock-agent-center          中控 Web / 规则调度 / 统一入口
+stock-agent-daily-server    内置 daily_stock_analysis Web 服务
+stock-agent-daily-analyzer  内置 daily_stock_analysis 定时分析服务
+stock-agent-uzi-server      内置 UZI-Skill Web / HTML 深度报告
 ```
 
 ## 已实现能力
 
 - FastAPI Web/API 入口
 - SQLite 数据库
-- 内置轻量股票池扫描，替代 daily_stock_analysis 的基础发现能力
+- 内置 `daily_stock_analysis` 服务
+- 内置 `UZI-Skill` 服务
+- 内置轻量股票池扫描器，作为 daily 的快速补充
 - 扫描结果评分、排序、生成候选股票
 - 规则引擎：score >= 85 进入 deep，score >= 70 进入 medium
 - 自动调用内置 UZI-Skill Web API
 - 保存候选股票和 UZI 报告任务记录
 - 钉钉统一通知出口
-- Docker Compose 一键启动两个内部服务
-- 外部 daily_stock_analysis 接入预留
+- Docker Compose 一键启动全部内部服务
 
 ## 项目结构
 
@@ -100,16 +99,12 @@ copy .env.example .env
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-打开：
+打开三个入口：
 
 ```text
-http://localhost:9000
-```
-
-UZI 内部服务也会暴露：
-
-```text
-http://localhost:8977
+中控入口：       http://localhost:9000
+daily_stock：   http://localhost:8000
+UZI-Skill：     http://localhost:8977
 ```
 
 ## 常用命令
@@ -124,6 +119,13 @@ docker compose -f docker/docker-compose.yml ps
 
 ```bash
 docker compose -f docker/docker-compose.yml logs -f agent-center
+```
+
+查看 daily 日志：
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f daily-server
+docker compose -f docker/docker-compose.yml logs -f daily-analyzer
 ```
 
 查看 UZI 日志：
@@ -145,15 +147,21 @@ docker compose -f docker/docker-compose.yml down
 ```env
 SERVER_PORT=9000
 
-# 内置 UZI 服务，单项目部署时无需修改
+# 内置 daily_stock_analysis
+DAILY_REPO_CONTEXT=https://github.com/Hygge8/daily_stock_analysis.git#fix/dingtalk-web-settings
+DAILY_WEB_PORT=8000
+DAILY_API_URL=http://daily-server:8000
+ENABLE_DAILY_SYNC=true
+
+# 内置 UZI-Skill
+UZI_REPO=https://github.com/Hygge8/UZI-Skill.git
+UZI_REF=feature/uzi-web-docker
+UZI_WEB_PORT=8977
 UZI_API_URL=http://uzi-server:8977
 UZI_DEFAULT_DEPTH=deep
 
 # 股票池
 STOCK_POOL=VGT,SPCX,DRAM,QLD,TQQQ,NVDA,TSLA,QQQM,QQQ
-SCAN_PERIOD=3mo
-SCAN_INTERVAL=1d
-AUTO_SUBMIT_SCAN_RESULTS=true
 
 # 规则
 DEEP_SCORE_THRESHOLD=85
@@ -167,9 +175,54 @@ ENABLE_DINGTALK_NOTIFY=false
 
 ## Web 使用
 
-页面提供两个入口：
+### 1. 中控入口
 
-### 股票池扫描
+```text
+http://localhost:9000
+```
+
+用于：
+
+```text
+股票池扫描
+候选股评分
+按规则进入 UZI
+查看候选记录
+查看 UZI 任务记录
+```
+
+### 2. daily_stock_analysis 入口
+
+```text
+http://localhost:8000
+```
+
+用于：
+
+```text
+完整 daily_stock_analysis WebUI
+自选股扫描
+每日分析
+市场复盘
+通知配置
+```
+
+### 3. UZI-Skill 入口
+
+```text
+http://localhost:8977
+```
+
+用于：
+
+```text
+单票深度研究
+批量 UZI 分析
+HTML 深度报告
+历史报告查看
+```
+
+## 中控扫描流程
 
 输入：
 
@@ -197,22 +250,6 @@ score >= 70 自动 medium
   ↓
 调用 UZI 生成 HTML 深度报告
 ```
-
-### 手动提交 UZI
-
-输入单只股票，例如：
-
-```text
-NVDA
-```
-
-选择：
-
-```text
-deep
-```
-
-提交后会调用内置 UZI。
 
 ## API
 
@@ -260,24 +297,37 @@ deep
 ## 数据目录
 
 ```text
-database/      SQLite 数据库
-reports/       stock-agent-center 记录目录
-logs/          stock-agent-center 日志
-uzi-data/      内置 UZI 运行数据
-uzi-reports/   内置 UZI HTML 报告
-uzi-logs/      内置 UZI 日志
-uzi-cache/     内置 UZI 缓存
+database/       stock-agent-center SQLite 数据库
+reports/        stock-agent-center 记录目录
+logs/           stock-agent-center 日志
+
+daily-data/     daily_stock_analysis 数据库和运行数据
+daily-reports/  daily_stock_analysis 报告
+daily-logs/     daily_stock_analysis 日志
+
+uzi-data/       UZI 运行数据
+uzi-reports/    UZI HTML 报告
+uzi-logs/       UZI 日志
+uzi-cache/      UZI 缓存
 ```
 
 ## 与原两个项目的关系
 
 ```text
-daily_stock_analysis = 股票池/日报系统，当前用内置轻量扫描替代基础能力
-UZI-Skill            = 单票深度研究引擎，当前由 Docker 自动内置启动
+daily_stock_analysis = 完整内置，作为股票池/日报/市场复盘系统
+UZI-Skill            = 完整内置，作为单票深度研究引擎
 stock-agent-center   = 统一部署入口、调度中控、规则判断、统一推送
 ```
 
-以后如果想换回专业版 daily，也可以把 `ENABLE_DAILY_SYNC=true`，接入外部 daily_stock_analysis。
+## 注意
+
+`daily_stock_analysis` 的 Docker 构建使用：
+
+```text
+https://github.com/Hygge8/daily_stock_analysis.git#fix/dingtalk-web-settings
+```
+
+这样会包含你之前补的钉钉 WebUI 配置能力。
 
 ## 投资风险说明
 
