@@ -1,6 +1,80 @@
 name: stock-agent-center
 
 services:
+  daily-server:
+    build:
+      context: ${DAILY_REPO_CONTEXT:-https://github.com/Hygge8/daily_stock_analysis.git#fix/dingtalk-web-settings}
+      dockerfile: docker/Dockerfile
+    image: stock-agent-daily-stock-analysis:latest
+    container_name: stock-agent-daily-server
+    restart: unless-stopped
+    command: ["python", "main.py", "--serve-only", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${DAILY_WEB_PORT:-8000}:8000"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      DATABASE_PATH: /app/data/daily_stock_analysis.db
+      DATA_DIR: /app/data
+      REPORTS_DIR: /app/reports
+      LOG_DIR: /app/logs
+      STOCK_LIST: ${STOCK_POOL:-VGT,SPCX,DRAM,QLD,TQQQ,NVDA,TSLA,QQQM,QQQ}
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+      DINGTALK_SECRET: ${DINGTALK_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      LONGPORT_APP_KEY: ${LONGPORT_APP_KEY:-}
+      LONGPORT_APP_SECRET: ${LONGPORT_APP_SECRET:-}
+      LONGPORT_ACCESS_TOKEN: ${LONGPORT_ACCESS_TOKEN:-}
+    volumes:
+      - ../daily-data:/app/data
+      - ../daily-reports:/app/reports
+      - ../daily-logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  daily-analyzer:
+    build:
+      context: ${DAILY_REPO_CONTEXT:-https://github.com/Hygge8/daily_stock_analysis.git#fix/dingtalk-web-settings}
+      dockerfile: docker/Dockerfile
+    image: stock-agent-daily-stock-analysis:latest
+    container_name: stock-agent-daily-analyzer
+    restart: unless-stopped
+    command: ["python", "main.py"]
+    depends_on:
+      - daily-server
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DATABASE_PATH: /app/data/daily_stock_analysis.db
+      DATA_DIR: /app/data
+      REPORTS_DIR: /app/reports
+      LOG_DIR: /app/logs
+      STOCK_LIST: ${STOCK_POOL:-VGT,SPCX,DRAM,QLD,TQQQ,NVDA,TSLA,QQQM,QQQ}
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+      DINGTALK_SECRET: ${DINGTALK_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      LONGPORT_APP_KEY: ${LONGPORT_APP_KEY:-}
+      LONGPORT_APP_SECRET: ${LONGPORT_APP_SECRET:-}
+      LONGPORT_ACCESS_TOKEN: ${LONGPORT_ACCESS_TOKEN:-}
+    volumes:
+      - ../daily-data:/app/data
+      - ../daily-reports:/app/reports
+      - ../daily-logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   uzi-server:
     build:
       context: ..
@@ -45,6 +119,7 @@ services:
     container_name: stock-agent-center
     restart: unless-stopped
     depends_on:
+      - daily-server
       - uzi-server
     env_file:
       - path: ../.env
@@ -62,8 +137,8 @@ services:
       SCAN_PERIOD: ${SCAN_PERIOD:-3mo}
       SCAN_INTERVAL: ${SCAN_INTERVAL:-1d}
       AUTO_SUBMIT_SCAN_RESULTS: ${AUTO_SUBMIT_SCAN_RESULTS:-true}
-      DAILY_API_URL: ${DAILY_API_URL:-http://daily-server:8000}
-      ENABLE_DAILY_SYNC: ${ENABLE_DAILY_SYNC:-false}
+      DAILY_API_URL: http://daily-server:8000
+      ENABLE_DAILY_SYNC: ${ENABLE_DAILY_SYNC:-true}
       DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
       DINGTALK_SECRET: ${DINGTALK_SECRET:-}
       ENABLE_DINGTALK_NOTIFY: ${ENABLE_DINGTALK_NOTIFY:-false}
