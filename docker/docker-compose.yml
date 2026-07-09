@@ -1,0 +1,43 @@
+name: stock-agent-center
+
+services:
+  agent-center:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: stock-agent-center:latest
+    container_name: stock-agent-center
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    ports:
+      - "${SERVER_PORT:-9000}:${SERVER_PORT:-9000}"
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: ${SERVER_PORT:-9000}
+      DATABASE_URL: sqlite:///database/stock_agent.db
+      UZI_API_URL: ${UZI_API_URL:-http://host.docker.internal:8977}
+      UZI_DEFAULT_DEPTH: ${UZI_DEFAULT_DEPTH:-deep}
+      DAILY_API_URL: ${DAILY_API_URL:-http://daily-server:8000}
+      ENABLE_DAILY_SYNC: ${ENABLE_DAILY_SYNC:-false}
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+      DINGTALK_SECRET: ${DINGTALK_SECRET:-}
+      ENABLE_DINGTALK_NOTIFY: ${ENABLE_DINGTALK_NOTIFY:-false}
+      DEEP_SCORE_THRESHOLD: ${DEEP_SCORE_THRESHOLD:-85}
+      MEDIUM_SCORE_THRESHOLD: ${MEDIUM_SCORE_THRESHOLD:-70}
+      ENABLE_SCHEDULE: ${ENABLE_SCHEDULE:-false}
+      SCAN_TIME: ${SCAN_TIME:-18:00}
+      SCHEDULE_TICKERS: ${SCHEDULE_TICKERS:-NVDA,TSLA,QQQ}
+      SCHEDULE_DEPTH: ${SCHEDULE_DEPTH:-deep}
+    volumes:
+      - ../database:/app/database
+      - ../reports:/app/reports
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
