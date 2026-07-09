@@ -1,6 +1,42 @@
 name: stock-agent-center
 
 services:
+  uzi-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.uzi
+      args:
+        UZI_REPO: ${UZI_REPO:-https://github.com/Hygge8/UZI-Skill.git}
+        UZI_REF: ${UZI_REF:-feature/uzi-web-docker}
+    image: stock-agent-uzi-skill:latest
+    container_name: stock-agent-uzi-server
+    restart: unless-stopped
+    ports:
+      - "${UZI_WEB_PORT:-8977}:8977"
+    environment:
+      UZI_WEB_HOST: 0.0.0.0
+      UZI_WEB_PORT: 8977
+      UZI_WEB_DATA_DIR: /app/data
+      UZI_WEB_LOGS_DIR: /app/logs
+      UZI_WEB_REPORTS_DIR: /app/reports
+      UZI_WEB_DEFAULT_DEPTH: ${UZI_WEB_DEFAULT_DEPTH:-lite}
+      UZI_WEB_MAX_PARALLEL_JOBS: ${UZI_WEB_MAX_PARALLEL_JOBS:-1}
+      UZI_WEB_MAX_QUEUE_SIZE: ${UZI_WEB_MAX_QUEUE_SIZE:-30}
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+      DINGTALK_SECRET: ${DINGTALK_SECRET:-}
+      MX_APIKEY: ${MX_APIKEY:-}
+      STOCK_NO_CACHE: ${STOCK_NO_CACHE:-}
+    volumes:
+      - ../uzi-data:/app/data
+      - ../uzi-logs:/app/logs
+      - ../uzi-reports:/app/reports
+      - ../uzi-cache:/app/skills/deep-analysis/scripts/.cache
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   agent-center:
     build:
       context: ..
@@ -8,6 +44,8 @@ services:
     image: stock-agent-center:latest
     container_name: stock-agent-center
     restart: unless-stopped
+    depends_on:
+      - uzi-server
     env_file:
       - path: ../.env
         required: false
@@ -17,8 +55,13 @@ services:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: ${SERVER_PORT:-9000}
       DATABASE_URL: sqlite:///database/stock_agent.db
-      UZI_API_URL: ${UZI_API_URL:-http://host.docker.internal:8977}
+      UZI_API_URL: http://uzi-server:8977
       UZI_DEFAULT_DEPTH: ${UZI_DEFAULT_DEPTH:-deep}
+      UZI_REQUEST_TIMEOUT: ${UZI_REQUEST_TIMEOUT:-30}
+      STOCK_POOL: ${STOCK_POOL:-VGT,SPCX,DRAM,QLD,TQQQ,NVDA,TSLA,QQQM,QQQ}
+      SCAN_PERIOD: ${SCAN_PERIOD:-3mo}
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-1d}
+      AUTO_SUBMIT_SCAN_RESULTS: ${AUTO_SUBMIT_SCAN_RESULTS:-true}
       DAILY_API_URL: ${DAILY_API_URL:-http://daily-server:8000}
       ENABLE_DAILY_SYNC: ${ENABLE_DAILY_SYNC:-false}
       DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
@@ -28,14 +71,11 @@ services:
       MEDIUM_SCORE_THRESHOLD: ${MEDIUM_SCORE_THRESHOLD:-70}
       ENABLE_SCHEDULE: ${ENABLE_SCHEDULE:-false}
       SCAN_TIME: ${SCAN_TIME:-18:00}
-      SCHEDULE_TICKERS: ${SCHEDULE_TICKERS:-NVDA,TSLA,QQQ}
       SCHEDULE_DEPTH: ${SCHEDULE_DEPTH:-deep}
     volumes:
       - ../database:/app/database
       - ../reports:/app/reports
       - ../logs:/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     logging:
       driver: json-file
       options:
